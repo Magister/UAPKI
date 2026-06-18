@@ -119,9 +119,14 @@ uses after collecting the per-arch build artifacts.
 ### Continuous integration
 
 `.github/workflows/build-1c-addin.yml` builds the Windows x64 and x86 binaries
-on every push that touches the AddIn (or on manual dispatch), then a packaging
-job runs `build_pkg.sh --no-build` and uploads the bundle as the
-`uapki-1c-addin` workflow artifact.
+and packages the bundle. It runs on **version-tag pushes** (`v*`) and on manual
+dispatch — ordinary pushes to `main` do not trigger it.
+
+- On a tag push (e.g. `git tag v1.2.0 && git push origin v1.2.0`) the bundle
+  version is taken from the tag, and the resulting `uapki-1c-<ver>-<hash>.zip` is
+  attached to a GitHub **Release** for that tag.
+- On manual dispatch the bundle is produced as the `uapki-1c-addin` workflow
+  artifact only (no release).
 
 ### Verification harness
 

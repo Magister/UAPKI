@@ -18,7 +18,12 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIBROOT="$(cd "${HERE}/.." && pwd)"
-VERSION="$(sed -n 's/^set(UAPKI_1C_VERSION \([0-9.]*\)).*/\1/p' "${HERE}/CMakeLists.txt" | head -1)"
+# Version: explicit env override (e.g. from a release tag) wins, else the value
+# in CMakeLists.txt, else a hard default.
+VERSION="${UAPKI_1C_VERSION:-}"
+if [ -z "${VERSION}" ]; then
+    VERSION="$(sed -n 's/^set(UAPKI_1C_VERSION \([0-9.]*\)).*/\1/p' "${HERE}/CMakeLists.txt" | head -1)"
+fi
 VERSION="${VERSION:-1.0.0}"
 
 # Short commit hash for build provenance, appended to the version so every

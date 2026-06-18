@@ -3,18 +3,17 @@ name: Build 1C AddIn
 # Builds the self-contained UAPKI 1C:Enterprise native AddIn (Windows x64 + x86)
 # and packages it into a ready-to-attach 1C bundle: Manifest.xml plus the
 # per-arch binaries, each named with the version and the short commit hash.
+#
+# Runs on version-tag pushes (v*) — attaching the bundle to a GitHub Release —
+# and on manual dispatch (artifact only). Ordinary pushes to main do not build.
 
 on:
   push:
-    branches: [ main ]
-    paths:
-      - 'library/uapki-1c/**'
-      - 'library/**/CMakeLists.txt'
-      - 'library/**/*-export.h'
-      - 'library/common/loaders/**'
-      - 'library/cm-pkcs12/src/static-api.*'
-      - '.github/workflows/build-1c-addin.yml'
+    tags: [ 'v*' ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-windows:
@@ -84,7 +83,14 @@ jobs:
           mkdir -p library/uapki-1c/pkg
           find artifacts -name 'uapki-1c*.dll' -type f -exec cp {} library/uapki-1c/pkg/ \;
           echo "Collected binaries:"; ls -l library/uapki-1c/pkg
-          ( cd library/uapki-1c && ./build_pkg.sh --no-build )
+          # On a version-tag build, derive the bundle version from the tag
+          # (v1.2.0 -> 1.2.0) so it matches the release; otherwise build_pkg.sh
+          # falls back to UAPKI_1C_VERSION from CMakeLists.txt.
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            export UAPKI_1C_VERSION="${GITHUB_REF#refs/tags/v}"
+            echo "Version from tag: ${UAPKI_1C_VERSION}"
+          fi
+          ( cd library/uapki-1c && bash build_pkg.sh --no-build )
 
       - name: Upload bundle
         uses: actions/upload-artifact@v4
@@ -92,3 +98,10 @@ jobs:
           name: uapki-1c-addin
           path: library/uapki-1c/uapki-1c-*.zip
           if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: library/uapki-1c/uapki-1c-*.zip
+          generate_release_notes: true
