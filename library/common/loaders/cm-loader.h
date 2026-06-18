@@ -50,6 +50,16 @@ public:
         const std::string& libName
     );
 
+    //  Registers a built-in (statically linked) CM provider under the given
+    //  libName. When CmLoader::load() is later asked to load that libName it
+    //  resolves to the registered API instead of dlopen()ing a shared object.
+    //  This lets a self-contained binary embed providers (e.g. cm-pkcs12)
+    //  without shipping a separate cm-pkcs12.{dll,so,dylib}.
+    static void registerStaticProvider (
+        const std::string& libName,
+        const CM_PROVIDER_API& api
+    );
+
     HANDLE_DLIB getHandle (void) const {
         return (HANDLE_DLIB)m_Api.hlib;
     }

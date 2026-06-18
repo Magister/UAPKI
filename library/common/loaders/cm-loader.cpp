@@ -27,6 +27,7 @@
 
 #include "cm-loader.h"
 #include "uapki-errors.h"
+#include <map>
 #include <stdio.h>
 #include <string.h>
 
@@ -38,6 +39,23 @@
 
 
 using namespace std;
+
+
+//  Process-wide registry of built-in (statically linked) CM providers.
+//  Kept as a function-local static to avoid static-initialization-order issues.
+static map<string, CM_PROVIDER_API>& staticProviderRegistry (void)
+{
+    static map<string, CM_PROVIDER_API> registry;
+    return registry;
+}
+
+//  Non-null sentinel stored in m_Api.hlib for a built-in provider, so that
+//  isLoaded() is true while unload() knows not to call DL_CLOSE on it.
+static void* staticProviderSentinel (void)
+{
+    static const char sentinel = 0;
+    return (void*)&sentinel;
+}
 
 
 CmLoader::CmLoader (void)
@@ -59,12 +77,33 @@ string CmLoader::getLibName (
     return string(LIBNAME_PREFIX) + libName + "." + string(LIBNAME_EXT);
 }
 
+void CmLoader::registerStaticProvider (
+        const string& libName,
+        const CM_PROVIDER_API& api
+)
+{
+    staticProviderRegistry()[libName] = api;
+}
+
 bool CmLoader::load (
         const string& libName,
         const string& dir
 )
 {
     unload();
+
+    //  A built-in (statically linked) provider registered under this libName
+    //  takes precedence over loading a shared object from disk.
+    {
+        map<string, CM_PROVIDER_API>& registry = staticProviderRegistry();
+        map<string, CM_PROVIDER_API>::const_iterator it = registry.find(libName);
+        if (it != registry.end()) {
+            m_Api = it->second;
+            m_Api.hlib = staticProviderSentinel();
+            DEBUG_OUTCON(printf("CmLoader.load('%s'), built-in static provider\n", libName.c_str()));
+            return true;
+        }
+    }
 
     bool ok = false;
     const string lib_name = dir + getLibName(libName);
@@ -100,7 +139,10 @@ bool CmLoader::load (
 void CmLoader::unload (void)
 {
     if (isLoaded()) {
-        DL_FREE_LIBRARY(m_Api.hlib);
+        //  Built-in providers carry a sentinel handle and must not be DL_CLOSE'd.
+        if (m_Api.hlib != staticProviderSentinel()) {
+            DL_FREE_LIBRARY(m_Api.hlib);
+        }
         memset(&m_Api, 0, sizeof(CM_PROVIDER_API));
     }
 }
