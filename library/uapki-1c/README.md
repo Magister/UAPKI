@@ -36,14 +36,32 @@ Crypto = Новый("AddIn.UAPKI.Uapki");
 // VERSION
 Ответ = Crypto.Process("{""method"":""VERSION""}");
 
-// INIT — note "lib":"cm-pkcs12" resolves to the *built-in* provider; no
-// cm-pkcs12.dll/.so needs to exist on disk.
-ЗапросINIT =
+// Cache directories for certificates and CRLs. UAPKI opendir()s these during
+// INIT, so each must be an ABSOLUTE path that already EXISTS, is writable, and
+// ends with a slash. A relative path resolves against 1C's bin dir and INIT
+// fails with 4160 CERT_STORE_LOAD_ERROR — so build absolute paths and create
+// the directories on demand:
+БазовыйКаталог = КаталогВременныхФайлов() + "uapki\";
+СоздатьКаталог(БазовыйКаталог + "certs");
+СоздатьКаталог(БазовыйКаталог + "crls");
+// UAPKI accepts forward slashes everywhere, so use them to avoid JSON
+// backslash-escaping; keep the trailing slash.
+ПутьБазовый      = СтрЗаменить(БазовыйКаталог, "\", "/");
+ПутьСертификатов = ПутьБазовый + "certs/";
+ПутьCRL          = ПутьБазовый + "crls/";
+
+// INIT — call ONCE per session and reuse the instance. UAPKI re-runs its crypto
+// self-tests on every INIT, so a second INIT can fail with 33 SELF_TEST_FAIL.
+// "lib":"cm-pkcs12" resolves to the *built-in* provider; no cm-pkcs12.dll/.so
+// needs to exist on disk.
+ШаблонINIT =
 "{""method"":""INIT"",""parameters"":{
    ""cmProviders"":{""dir"":"""",""allowedProviders"":[{""lib"":""cm-pkcs12""}]},
-   ""certCache"":{""path"":""certs/"",""trustedCerts"":[]},
-   ""crlCache"":{""path"":""crls/""},
+   ""certCache"":{""path"":""%CERTS%"",""trustedCerts"":[]},
+   ""crlCache"":{""path"":""%CRLS%""},
    ""offline"":false}}";
+ЗапросINIT = СтрЗаменить(ШаблонINIT, "%CERTS%", ПутьСертификатов);
+ЗапросINIT = СтрЗаменить(ЗапросINIT, "%CRLS%", ПутьCRL);
 Ответ = Crypto.Process(ЗапросINIT);
 
 // Open a PKCS#12 key, select it, sign:
@@ -86,7 +104,24 @@ Output names follow the 1C bundle convention:
 
 `./build_pkg.sh` builds the host-platform binaries (on Windows: both x64 and
 x86), generates `Manifest.xml`, validates it against `MANIFEST.xsd`, and zips a
-ready-to-attach 1C AddIn bundle.
+ready-to-attach 1C AddIn bundle `uapki-1c-<version>.zip`.
+
+Inside the bundle each binary is suffixed with the AddIn version (from
+`UAPKI_1C_VERSION` in `CMakeLists.txt`) and the short commit hash, e.g.
+`uapki-1cWin64_1.0.0-e9dd2f3.dll`, so every artifact is traceable to its source;
+`Manifest.xml` references those exact names. The hash is taken from
+`$UAPKI_1C_GITHASH`, then `$GITHUB_SHA`, then `git rev-parse`.
+
+`./build_pkg.sh --no-build` skips the compile step and only (re)packages
+binaries already placed in `./pkg/` under their stable names — this is what CI
+uses after collecting the per-arch build artifacts.
+
+### Continuous integration
+
+`.github/workflows/build-1c-addin.yml` builds the Windows x64 and x86 binaries
+on every push that touches the AddIn (or on manual dispatch), then a packaging
+job runs `build_pkg.sh --no-build` and uploads the bundle as the
+`uapki-1c-addin` workflow artifact.
 
 ### Verification harness
 
@@ -116,6 +151,13 @@ embedded copy.
 
 ## Notes
 
+- **INIT once**: call INIT a single time per session and reuse the instance.
+  UAPKI re-runs its crypto self-tests on every INIT, so a repeated INIT can fail
+  with `33 SELF_TEST_FAIL` (alternatively pass `"skipSelfTest":true`).
+- **Cache directories**: the `certCache`/`crlCache` `path` must be an existing,
+  writable, **absolute** directory ending in a slash — UAPKI `opendir()`s it on
+  INIT (a relative path → `4160 CERT_STORE_LOAD_ERROR`). Create the directories
+  before INIT (`СоздатьКаталог`); an empty `""` disables the on-disk cache.
 - **Offline mode**: pass `"offline":true` to INIT to bypass all network access
   (OCSP/CRL/TSP); offline sign/verify needs no connectivity.
 - **Isolation**: `GetAttachType()` returns `eCanAttachAny`, so 1C may run the

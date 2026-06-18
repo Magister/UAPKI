@@ -21,6 +21,18 @@ LIBROOT="$(cd "${HERE}/.." && pwd)"
 VERSION="$(sed -n 's/^set(UAPKI_1C_VERSION \([0-9.]*\)).*/\1/p' "${HERE}/CMakeLists.txt" | head -1)"
 VERSION="${VERSION:-1.0.0}"
 
+# Short commit hash for build provenance, appended to the version so every
+# artifact is traceable to its source. Precedence: explicit override, then the
+# CI-provided SHA, then a local git lookup, else nothing.
+GITHASH="${UAPKI_1C_GITHASH:-}"
+if [ -z "${GITHASH}" ] && [ -n "${GITHUB_SHA:-}" ]; then
+    GITHASH="${GITHUB_SHA:0:7}"
+fi
+if [ -z "${GITHASH}" ]; then
+    GITHASH="$(git -C "${HERE}" rev-parse --short=7 HEAD 2>/dev/null || true)"
+fi
+FULLVER="${VERSION}${GITHASH:+-${GITHASH}}"
+
 PKG_DIR="${HERE}/pkg"
 CMAKE="${CMAKE:-cmake}"
 
@@ -70,19 +82,40 @@ build_unix () {
     collect "${build_dir}" "${out_name}"
 }
 
-generate_manifest () {
+# Stable binary base name | 1C os | 1C arch. The packaged copies carry the
+# version+hash suffix; the build itself still emits the stable names.
+PKG_ENTRIES=(
+    "uapki-1cWin32.dll|Windows|i386"
+    "uapki-1cWin64.dll|Windows|x86_64"
+    "libuapki-1cLin64.so|Linux|x86_64"
+    "libuapki-1cLinARM64.so|Linux|ARM64"
+    "libuapki-1cMac.dylib|MacOS|x86_64"
+)
+
+# uapki-1cWin64.dll -> uapki-1cWin64_<FULLVER>.dll  (suffix before the extension)
+versioned_name () {
+    local base="$1"
+    printf '%s_%s.%s' "${base%.*}" "${FULLVER}" "${base##*.}"
+}
+
+# Build Manifest.xml + the versioned binaries and zip them into the bundle.
+package () {
     local manifest="${PKG_DIR}/Manifest.xml"
+    local -a zipfiles=("Manifest.xml")
     {
         echo '<?xml version="1.0" encoding="UTF-8"?>'
         echo '<bundle xmlns="http://v8.1c.ru/8.2/addin/bundle">'
-        [ -f "${PKG_DIR}/uapki-1cWin32.dll" ]      && echo '  <component os="Windows" path="uapki-1cWin32.dll" type="native" arch="i386"/>'
-        [ -f "${PKG_DIR}/uapki-1cWin64.dll" ]      && echo '  <component os="Windows" path="uapki-1cWin64.dll" type="native" arch="x86_64"/>'
-        [ -f "${PKG_DIR}/libuapki-1cLin64.so" ]    && echo '  <component os="Linux" path="libuapki-1cLin64.so" type="native" arch="x86_64"/>'
-        [ -f "${PKG_DIR}/libuapki-1cLinARM64.so" ] && echo '  <component os="Linux" path="libuapki-1cLinARM64.so" type="native" arch="ARM64"/>'
-        [ -f "${PKG_DIR}/libuapki-1cMac.dylib" ]   && echo '  <component os="MacOS" path="libuapki-1cMac.dylib" type="native" arch="x86_64"/>'
+        for entry in "${PKG_ENTRIES[@]}"; do
+            IFS='|' read -r base os arch <<< "${entry}"
+            [ -f "${PKG_DIR}/${base}" ] || continue
+            local vname; vname="$(versioned_name "${base}")"
+            cp -f "${PKG_DIR}/${base}" "${PKG_DIR}/${vname}"
+            printf '  <component os="%s" path="%s" type="native" arch="%s"/>\n' "${os}" "${vname}" "${arch}"
+            zipfiles+=("${vname}")
+        done
         echo '</bundle>'
     } > "${manifest}"
-    echo "  wrote Manifest.xml"
+    echo "  wrote Manifest.xml (version ${FULLVER})"
 
     # Validate against the SDK schema if xmllint and the schema are available.
     local xsd="${HERE}/MANIFEST.xsd"
@@ -93,6 +126,17 @@ generate_manifest () {
             echo "  WARN: Manifest.xml did not validate against MANIFEST.xsd"
         fi
     fi
+
+    if [ "${#zipfiles[@]}" -le 1 ]; then
+        echo "ERROR: no binaries found in ${PKG_DIR} to package" >&2
+        exit 1
+    fi
+
+    local zip="${HERE}/uapki-1c-${FULLVER}.zip"
+    rm -f "${zip}"
+    ( cd "${PKG_DIR}" && zip -j -X "${zip}" "${zipfiles[@]}" )
+    echo "Package: ${zip}"
+    unzip -l "${zip}" || true
 }
 
 main () {
@@ -107,14 +151,7 @@ main () {
         esac
     fi
 
-    generate_manifest
-
-    local zip="${HERE}/uapki-1c-${VERSION}.zip"
-    rm -f "${zip}"
-    ( cd "${PKG_DIR}" && zip -j -X "${zip}" Manifest.xml ./*.dll ./*.so ./*.dylib 2>/dev/null || \
-      ( cd "${PKG_DIR}" && zip -j -X "${zip}" Manifest.xml $(ls ./*.dll ./*.so ./*.dylib 2>/dev/null) ) )
-    echo "Package: ${zip}"
-    unzip -l "${zip}" || true
+    package
 }
 
 main "$@"
