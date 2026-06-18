@@ -1,0 +1,3 @@
+# Packaging outputs produced by build_pkg.sh
+pkg/
+*.zip
