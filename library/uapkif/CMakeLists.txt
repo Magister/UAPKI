@@ -64,6 +64,11 @@ set_target_properties(uapkif PROPERTIES LINK_FLAGS_RELEASE -s)
 set_target_properties(uapkif PROPERTIES VERSION ${UAPKIF_VERSION} SOVERSION ${UAPKIF_SOVERSION})
 
 target_compile_definitions(uapkif PRIVATE UAPKIF_LIBRARY)
+if (UAPKI_LIBS_TYPE STREQUAL STATIC)
+    #  Tell every consumer (and this target) that uapkif is statically linked,
+    #  so uapkif-export.h drops the dllimport/dllexport decoration.
+    target_compile_definitions(uapkif PUBLIC UAPKIF_STATIC)
+endif ()
 if (${WIN32})
     target_compile_definitions(uapkif PRIVATE NOCRYPT)
     target_compile_definitions(uapkif PRIVATE _CRT_SECURE_NO_WARNINGS)

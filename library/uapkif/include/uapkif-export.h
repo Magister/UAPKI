@@ -28,7 +28,10 @@
 #ifndef UAPKIF_EXPORT_H
 #define UAPKIF_EXPORT_H
 
-#ifdef UAPKIF_LIBRARY
+#if defined(UAPKIF_STATIC)
+    //  Statically linked into a single binary: no import/export decoration.
+    #define UAPKIF_EXPORT
+#elif defined(UAPKIF_LIBRARY)
     #if defined(_MSC_VER)
         #define UAPKIF_EXPORT __declspec(dllexport)
     #else

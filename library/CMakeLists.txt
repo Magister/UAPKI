@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 3.05)
 
+#  Allow selecting the MSVC runtime library via CMAKE_MSVC_RUNTIME_LIBRARY
+#  (used to build the self-contained 1C AddIn with the static CRT, /MT).
+#  Default behaviour is unchanged when the variable is not set.
+if (POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+endif ()
+
 project(uapki LANGUAGES C)
 
 file(MAKE_DIRECTORY build)
@@ -119,6 +126,8 @@ endif()
 message(STATUS "OUT_DIR:" ${OUT_DIR})
 file(MAKE_DIRECTORY ${OUT_DIR})
 
+option(UAPKI_BUILD_1C_ADDIN "Build the 1C:Enterprise native AddIn (library/uapki-1c)" OFF)
+
 add_subdirectory (uapkic)
 add_subdirectory (uapkif)
 add_subdirectory (uapki)
@@ -127,6 +136,9 @@ if(IS_DIRECTORY ${PROJECT_SOURCE_DIR}/cm-pkcs12)
 endif()
 if(IS_DIRECTORY ${PROJECT_SOURCE_DIR}/hostapp)
   add_subdirectory (hostapp)
+endif()
+if(UAPKI_BUILD_1C_ADDIN AND IS_DIRECTORY ${PROJECT_SOURCE_DIR}/uapki-1c)
+  add_subdirectory (uapki-1c)
 endif()
 if(IS_DIRECTORY ${PROJECT_SOURCE_DIR}/test)
   add_subdirectory (test)

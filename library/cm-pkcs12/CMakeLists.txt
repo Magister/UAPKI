@@ -93,6 +93,11 @@ set_target_properties(cm-pkcs12 PROPERTIES LINK_FLAGS_RELEASE -s)
 set_target_properties(cm-pkcs12 PROPERTIES VERSION ${CM_PKCS12_VERSION} SOVERSION ${CM_PKCS12_SOVERSION})
 
 target_compile_definitions(cm-pkcs12 PRIVATE CM_LIBRARY)
+if (UAPKI_CM_PKCS12_LIB_TYPE STREQUAL STATIC)
+    #  Statically linked into a single binary: drop the dllimport/dllexport
+    #  decoration on the provider entry points (cm-export.h).
+    target_compile_definitions(cm-pkcs12 PUBLIC CM_STATIC)
+endif ()
 if (${WIN32})
     target_compile_definitions(cm-pkcs12 PRIVATE NOCRYPT)
     target_compile_definitions(cm-pkcs12 PRIVATE _CRT_SECURE_NO_WARNINGS)

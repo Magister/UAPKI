@@ -45,7 +45,12 @@ if (${WIN32})
     set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 endif ()
 
-find_package(CURL REQUIRED)
+#  On Windows the repo vendors a static libcurl (common/curl), so the build is
+#  self-contained and find_package(CURL) is neither needed nor available.
+#  Elsewhere keep using the system curl found by CMake.
+if (NOT WIN32)
+    find_package(CURL REQUIRED)
+endif ()
 
 set(PATH_PRJ ${CMAKE_CURRENT_SOURCE_DIR})
 set(PATH_UAPKIC ${PATH_PRJ}/../uapkic)
@@ -90,12 +95,28 @@ set_target_properties(uapki PROPERTIES LINK_FLAGS_RELEASE -s)
 set_target_properties(uapki PROPERTIES VERSION ${UAPKI_VERSION} SOVERSION ${UAPKI_SOVERSION})
 
 target_compile_definitions(uapki PRIVATE UAPKI_LIBRARY)
+if (UAPKI_LIBS_TYPE STREQUAL STATIC)
+    #  Statically linked into a single binary: drop dllimport/dllexport so
+    #  consumers (e.g. the 1C AddIn) resolve process()/json_free() directly.
+    target_compile_definitions(uapki PUBLIC UAPKI_STATIC)
+endif ()
 target_link_libraries(uapki ${UAPKI_INTERNAL_INCLUDES_MODE} uapkic uapkif)
 if (${UNIX})
     target_link_libraries(uapki PRIVATE dl curl)
 endif ()
 if (${APPLE})
     target_link_libraries(uapki PRIVATE iconv)
+endif ()
+if (${WIN32})
+    #  Vendored static libcurl + its Win32 system dependencies (mirrors uapki.vcxproj).
+    #  http-helper.cpp defines CURL_STATICLIB itself, so no extra define is needed here.
+    target_include_directories(uapki PRIVATE ${PATH_PRJ}/../common/curl/include)
+    if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+        target_link_libraries(uapki PRIVATE ${PATH_PRJ}/../common/curl/builds/windows_x86-64/libcurl.lib)
+    else ()
+        target_link_libraries(uapki PRIVATE ${PATH_PRJ}/../common/curl/builds/windows_x86/libcurl.lib)
+    endif ()
+    target_link_libraries(uapki PRIVATE ws2_32 crypt32 wldap32)
 endif ()
 
 

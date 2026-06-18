@@ -57,6 +57,11 @@ set_target_properties(uapkic PROPERTIES VERSION ${UAPKIC_VERSION} SOVERSION ${UA
 
 target_compile_definitions(uapkic PRIVATE UAPKIC_LIBRARY)
 target_compile_definitions(uapkic PRIVATE UAPKIC_SELF_TEST)
+if (UAPKI_LIBS_TYPE STREQUAL STATIC)
+    #  Tell every consumer (and this target) that uapkic is statically linked,
+    #  so uapkic-export.h drops the dllimport/dllexport decoration.
+    target_compile_definitions(uapkic PUBLIC UAPKIC_STATIC)
+endif ()
 if (${WIN32})
     target_compile_definitions(uapkic PRIVATE NOCRYPT)
     target_compile_definitions(uapkic PRIVATE _CRT_SECURE_NO_WARNINGS)

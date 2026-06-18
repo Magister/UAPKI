@@ -1,4 +1,5 @@
 build/
+build-1c*/
 cmake-build-*
 
 ## Ignore Visual Studio temporary files, build results, and

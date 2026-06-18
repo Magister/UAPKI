@@ -28,7 +28,10 @@
 #ifndef CM_EXPORT_H
 #define CM_EXPORT_H
 
-#ifdef CM_LIBRARY
+#if defined(CM_STATIC)
+    //  Statically linked into a single binary: no import/export decoration.
+    #define CM_EXPORT
+#elif defined(CM_LIBRARY)
     #if defined(_MSC_VER)
         #define CM_EXPORT __declspec(dllexport)
     #else
