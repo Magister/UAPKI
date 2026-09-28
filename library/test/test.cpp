@@ -25,6 +25,9 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 #include <stddef.h>
 #include <stdint.h>
 #include <locale.h>
@@ -43,10 +46,10 @@
 
 #ifdef _WIN32
  #include <windows.h>
- #define sleep_ms(ms) Sleep(ms)
+ #define SLEEP_MS(ms) Sleep((DWORD)ms)
 #else
  #include <unistd.h>
- #define sleep_ms(ms) usleep((ms)*1000)
+ #define SLEEP_MS(ms) usleep((ms)*1000)
 #endif
 
 
@@ -234,7 +237,7 @@ static string contentptr_to_hexptr (
     uint64_t ptr64 = (uint64_t)(buf.data());
     rv_strptr.resize(2 * sizeof(void*));
     for (size_t i = 0, j = rv_strptr.size(); i < sizeof(void*); i++, j -= 2) {
-        sprintf(s_hex, "%02X", (uint8_t)(ptr64 >> (i * 8)));
+        snprintf(s_hex, sizeof(s_hex), "%02X", (uint8_t)(ptr64 >> (i * 8)));
         rv_strptr[j - 2] = s_hex[0];
         rv_strptr[j - 1] = s_hex[1];
     }
@@ -362,6 +365,7 @@ static bool run_task (
     const size_t cnt_tasks = (size_t)ParsonHelper::jsonObjectGetUint32(joTask, "times", 1);
     JSON_Object* jo_params = json_object_get_object(joTask, "parameters");
     actionByError = actionbyerr_from_str(ParsonHelper::jsonObjectGetString(joTask, "actionByError"));
+    const uint32_t sleep_ms = (size_t)ParsonHelper::jsonObjectGetUint32(joTask, "sleep", 0);
 
     for (size_t itest = 0; itest < cnt_tasks; itest++) {
         ParsonHelper json_req;
@@ -438,6 +442,10 @@ static bool run_task (
         }
         uapki.jsonFree(sjson_result);
     }
+
+    if (sleep_ms > 0) {
+        SLEEP_MS(sleep_ms);
+    }
     return true;
 }   //  run_task
 
@@ -494,8 +502,8 @@ void thread_proc (
 
         string s_method = ParsonHelper::jsonObjectGetString(jo_task, "method");
         const bool skip_task = ParsonHelper::jsonObjectGetBoolean(jo_task, "skip", false);
-        const uint32_t cnt_tasks = ParsonHelper::jsonObjectGetUint32(jo_task, "times", 1);
-        if (s_method.empty() || skip_task || (cnt_tasks == 0)) {
+        const uint32_t cnt_times = ParsonHelper::jsonObjectGetUint32(jo_task, "times", 1);
+        if (s_method.empty() || skip_task || (cnt_times == 0)) {
             puts("Skipped task.");
             continue;
         }
@@ -507,9 +515,9 @@ void thread_proc (
             if (!run_task(*uapki, log, jo_task, s_completemsg, actionby_err)) break;
         }
         else if (s_method == string("_SLEEP_THREAD")) {
-            const uint32_t ms = ParsonHelper::jsonObjectGetUint32(jo_task, "sleep", 0);
-            if (ms > 0) {
-                this_thread::sleep_for(chrono::milliseconds(ms));
+            const uint32_t sleep_ms = ParsonHelper::jsonObjectGetUint32(jo_task, "sleep", 0);
+            if (sleep_ms > 0) {
+                this_thread::sleep_for(chrono::milliseconds(sleep_ms));
             }
         }
 
@@ -561,7 +569,7 @@ int main (int argc, char *argv[])
     log.elapsedTimeEnabled = json.getBoolean("logElapsedTime", false);
     log.open();
 
-    printf("hardware_concurrency: %d\n", thread::hardware_concurrency());
+    printf("hardware_concurrency: %u\n", thread::hardware_concurrency());
     vector<thread> threads;
     vector<uint32_t> threadIds;
 
@@ -593,30 +601,30 @@ int main (int argc, char *argv[])
         else {
             if (s_method == string("_NEW_THREAD")) {
                 const uint32_t thread_id = ParsonHelper::jsonObjectGetUint32(jo_task, "threadId", 0);
-                JSON_Array* ja_tasks = json_object_get_array(jo_task, "tasks");
+                JSON_Array* ja_newthrtasks = json_object_get_array(jo_task, "tasks");
                 if (thread_id > 0) {
                     thread thr(
                         thread_proc,
                         &uapki,
                         thread_id,
-                        ja_tasks
+                        ja_newthrtasks
                     );
-                    threads.emplace_back(move(thr));
+                    threads.emplace_back(std::move(thr));
                     threadIds.push_back(thread_id);
                 }
             }
             else if (s_method == string("_SLEEP_MAIN")) {
-                const uint32_t ms = ParsonHelper::jsonObjectGetUint32(jo_task, "sleep", 0);
-                if (ms > 0) {
-                    sleep_ms(ms);
+                const uint32_t sleep_ms = ParsonHelper::jsonObjectGetUint32(jo_task, "sleep", 0);
+                if (sleep_ms > 0) {
+                    SLEEP_MS(sleep_ms);
                 }
             }
             else if (s_method == string("_WAIT_THREAD")) {
                 const uint32_t thread_id = ParsonHelper::jsonObjectGetUint32(jo_task, "threadId", 0);
-                for (size_t i = 0; i < threadIds.size(); i++) {
-                    if (threadIds[i] == thread_id) {
-                        threadIds[i] = 0;
-                        threads[i].join();
+                for (size_t j = 0; j < threadIds.size(); j++) {
+                    if (threadIds[j] == thread_id) {
+                        threadIds[j] = 0;
+                        threads[j].join();
                     }
                 }
             }
@@ -716,5 +724,7 @@ int main (int argc, char *argv[])
         }
     }
 
-    return 0;
+    //  non-zero exit code when any task registered an error - lets CI and
+    //  scripts detect failures instead of parsing the output
+    return (log_errors.empty()) ? 0 : 1;
 }

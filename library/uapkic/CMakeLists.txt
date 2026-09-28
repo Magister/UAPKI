@@ -1,9 +1,14 @@
-cmake_minimum_required(VERSION 3.05)
+cmake_minimum_required(VERSION 3.17)
 
-project(uapkic LANGUAGES C)
-set(UAPKIC_VERSION 2.0.2)
-set(UAPKIC_SOVERSION 2)
-message(STATUS "Project: uapkic, version: " ${UAPKIC_VERSION})
+project(uapkic VERSION 2.0.2 LANGUAGES C)
+
+message(STATUS "Project: ${PROJECT_NAME} (version: ${PROJECT_VERSION})")
+
+configure_file(
+    "${CMAKE_SOURCE_DIR}/rc-version.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/rc-version.h"
+    @ONLY
+)
 
 option(UAPKI_DISABLE_COPY "Disable copying into out dir" OFF)
 
@@ -24,58 +29,81 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_FLAGS_DEBUG_INIT "-Wall")
 set(CMAKE_CXX_FLAGS_RELEASE_INIT "-Wall")
 
-set(CMAKE_SKIP_BUILD_RPATH OFF)
-set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
-set(CMAKE_INSTALL_RPATH "\$ORIGIN")
+if (NOT WIN32)
+    set(CMAKE_SKIP_BUILD_RPATH OFF)
+    set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
+    
+    if(APPLE)
+        set(CMAKE_INSTALL_RPATH "@loader_path")
+    else()
+        set(CMAKE_INSTALL_RPATH "\${ORIGIN}")
+    endif()
+endif ()
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-if (${WIN32})
-    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+if (WIN32)
     set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 endif ()
 
 set(PATH_PRJ ${CMAKE_CURRENT_SOURCE_DIR})
 
 aux_source_directory(${PATH_PRJ}/src UAPKIC_SOURCES)
+if(WIN32)
+    set(RESOURCE_RC resource.rc)
+else()
+    set(RESOURCE_RC "")
+endif()
 
-add_library(uapkic ${UAPKI_LIBS_TYPE}
-        ${UAPKIC_SOURCES}
+add_library(${PROJECT_NAME} ${UAPKI_LIBS_TYPE}
+    ${UAPKIC_SOURCES}
+    ${RESOURCE_RC}
 )
 
-target_include_directories(uapkic PUBLIC
-        ${PATH_PRJ}
-        ${PATH_PRJ}/include
+target_include_directories(${PROJECT_NAME} PUBLIC
+    ${PATH_PRJ}
+    ${PATH_PRJ}/include
+    ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-set_target_properties(uapkic PROPERTIES C_VISIBILITY_PRESET hidden)
-set_target_properties(uapkic PROPERTIES CXX_VISIBILITY_PRESET hidden)
-set_target_properties(uapkic PROPERTIES LINK_FLAGS_RELEASE -s)
-set_target_properties(uapkic PROPERTIES VERSION ${UAPKIC_VERSION} SOVERSION ${UAPKIC_SOVERSION})
+set_target_properties(${PROJECT_NAME} PROPERTIES C_VISIBILITY_PRESET hidden)
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_VISIBILITY_PRESET hidden)
 
-target_compile_definitions(uapkic PRIVATE UAPKIC_LIBRARY)
-target_compile_definitions(uapkic PRIVATE UAPKIC_SELF_TEST)
+if(NOT WIN32)
+    if(APPLE)
+        target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:-Wl,-S>")
+    elseif(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+        set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS_RELEASE -s)
+    endif()
+else()
+    target_compile_definitions(${PROJECT_NAME} PRIVATE NOCRYPT)
+endif()
+
 if (UAPKI_LIBS_TYPE STREQUAL STATIC)
-    #  Tell every consumer (and this target) that uapkic is statically linked,
-    #  so uapkic-export.h drops the dllimport/dllexport decoration.
-    target_compile_definitions(uapkic PUBLIC UAPKIC_STATIC)
-endif ()
-if (${WIN32})
-    target_compile_definitions(uapkic PRIVATE NOCRYPT)
-    target_compile_definitions(uapkic PRIVATE _CRT_SECURE_NO_WARNINGS)
-else ()
-    target_link_libraries(uapkic PRIVATE pthread)
-    if (${APPLE})
-        target_link_libraries(uapkic PRIVATE iconv)
-    endif ()
-endif ()
+    #  Statically linked into a single binary (1C AddIn): drop dllimport/dllexport.
+    target_compile_definitions(${PROJECT_NAME} PUBLIC UAPKIC_STATIC)
+endif()
+if(WIN32)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
 
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    VERSION   "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}"
+    SOVERSION "${PROJECT_VERSION_MAJOR}"
+)
 
-if (NOT UAPKI_DISABLE_COPY)
-    add_custom_command(TARGET uapkic POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:uapkic> ../out/
-            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:uapkic> ../../${OUT_DIR}/
+target_compile_definitions(${PROJECT_NAME} PRIVATE UAPKIC_LIBRARY)
+target_compile_definitions(${PROJECT_NAME} PRIVATE UAPKIC_SELF_TEST)
+
+if(UNIX AND (NOT CMAKE_SYSTEM_NAME STREQUAL "Android") AND (NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten"))
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+endif()
+
+if(NOT UAPKI_DISABLE_COPY)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:uapkic> ../out/
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:uapkic> ${CMAKE_SOURCE_DIR}/${OUT_DIR}/
     )
-endif ()
+endif()

@@ -666,7 +666,7 @@ cleanup:
     return ret;
 }
 
-int Util::decodeAsn1Header (
+bool Util::decodeAsn1Header (
         const ByteArray* baEncoded,
         uint32_t& tag,
         size_t& hlen,
@@ -682,7 +682,7 @@ int Util::decodeAsn1Header (
     );
 }
 
-int Util::decodeAsn1Header (
+bool Util::decodeAsn1Header (
         const uint8_t* bufEncoded,
         const size_t lenEncoded,
         uint32_t& tag,
@@ -1066,7 +1066,7 @@ int Util::pbufToStr (
     if (len > 0) {
         *str = (char*)calloc(1, len + 1);
         if (*str == NULL) {
-            ret = RET_MEMORY_ALLOC_ERROR;
+            SET_ERROR(RET_MEMORY_ALLOC_ERROR);
         }
         memcpy(*str, buf, len);
     }

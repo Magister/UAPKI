@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 MAX_JOBS=4
 DEFINE_PARAMS=
@@ -68,6 +68,9 @@ else
   "macos-x64")
           DEFINE_PARAMS="-DCMAKE_OSX_ARCHITECTURES=x86_64"
           ;;
+  "macos-universal")
+          DEFINE_PARAMS="-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+          ;;
   "iOS")
           DEFINE_PARAMS="-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_SYSTEM_NAME=iOS"
           ;;
@@ -77,6 +80,8 @@ else
           ;;
   esac
 fi
+
+DEFINE_PARAMS="$DEFINE_PARAMS -DCMAKE_BUILD_TYPE=Release"
 
 echo "Build uapki-libs used define:"
 echo "DEFINE_PARAMS: '$DEFINE_PARAMS'"

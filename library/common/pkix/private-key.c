@@ -27,6 +27,15 @@
 
 #define FILE_MARKER "common/pkix/private-key.c"
 
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
+#include <string.h>
 #include "private-key.h"
 #include "aid.h"
 #include "cm-errors.h"
@@ -1117,6 +1126,9 @@ int private_key_ecdh(const bool withCofactor, const ByteArray* baSenderKey,
     DO(spki_get_algo_param(baRecipientSpki, &s_algo2, &s_param2));
     DEBUG_OUTCON( printf("\t algo2: '%s',  param2: '%s'\n", s_algo2, s_param2); );
 
+    if (!s_algo1 || !s_algo2 || !s_param1 || !s_param2) {
+        SET_ERROR(RET_CM_INVALID_PARAM_DH);
+    }
     if ((strcmp(s_algo1, s_algo2) != 0) || (strcmp(s_param1, s_param2) != 0) || oid_is_equal(OID_RSA, s_algo1)) {
         SET_ERROR(RET_CM_INVALID_PARAM_DH);
     }

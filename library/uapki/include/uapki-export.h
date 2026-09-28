@@ -31,10 +31,10 @@
 #define UAPKI_VERSION 1000
 
 
-#if defined(UAPKI_STATIC)
-    //  Statically linked into a single binary: no import/export decoration.
+#ifdef UAPKI_STATIC
     #define UAPKI_EXPORT
-#elif defined(UAPKI_LIBRARY)
+#else
+#ifdef UAPKI_LIBRARY
     #if defined(_MSC_VER)
         #define UAPKI_EXPORT __declspec(dllexport)
     #else
@@ -46,6 +46,7 @@
     #else
         #define UAPKI_EXPORT extern
     #endif
+#endif
 #endif
 
 

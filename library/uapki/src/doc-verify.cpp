@@ -409,8 +409,8 @@ VerifiedSignerInfo::VerifiedSignerInfo (void)
     , m_ValidationStatus(ValidationStatus::UNDEFINED)
     , m_StatusSignature(SignatureVerifyStatus::UNDEFINED)
     , m_StatusMessageDigest(DigestVerifyStatus::UNDEFINED)
-    , m_StatusEssCert(DataVerifyStatus::UNDEFINED)
     , m_SigningTime(0)
+    , m_StatusEssCert(DataVerifyStatus::UNDEFINED)
     , m_SignatureFormat(SignatureFormat::UNDEFINED)
     , m_IsValidSignatures(false)
     , m_IsValidDigests(false)
@@ -547,7 +547,7 @@ int VerifiedSignerInfo::buildCertChain (void)
                 added_cci->setIssuer(it);
                 DO(addCertChainItem(CertEntity::INTERMEDIATE, it, &added_cci));
             }
-            added_cci->setRoot();
+            added_cci->isSelfSigned() ? added_cci->setRoot() : added_cci->setIssuer(nullptr);
         }
         else {
             m_LastError = ret;
@@ -577,7 +577,7 @@ int VerifiedSignerInfo::buildCertChain (void)
                 added_cci->setIssuer(it);
                 DO(addCertChainItem(CertEntity::INTERMEDIATE, it, &added_cci));
             }
-            added_cci->setIssuer(nullptr);
+            added_cci->isSelfSigned() ? added_cci->setRoot() : added_cci->setIssuer(nullptr);
         }
         else {
             m_LastError = ret;

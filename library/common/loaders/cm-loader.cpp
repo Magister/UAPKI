@@ -57,6 +57,21 @@ static void* staticProviderSentinel (void)
     return (void*)&sentinel;
 }
 
+#ifdef __EMSCRIPTEN__
+//  WASM build has no dynamic loading - the cm-pkcs12 provider is linked
+//  statically and its exported API is referenced directly.
+extern "C" {
+  CM_ERROR provider_info (CM_JSON_PCHAR* providerInfo);
+  CM_ERROR provider_init (CM_JSON_PCHAR providerParams);
+  CM_ERROR provider_deinit (void);
+  CM_ERROR provider_open (const char* uri, uint32_t mode, const CM_JSON_PCHAR openParams, CM_SESSION_API** session);
+  CM_ERROR provider_close (CM_SESSION_API* session);
+  void block_free (void* ptr);
+  void bytearray_free (CM_BYTEARRAY* ba);
+}   //  extern "C"
+
+#endif
+
 
 CmLoader::CmLoader (void)
 {
@@ -105,6 +120,7 @@ bool CmLoader::load (
         }
     }
 
+#ifndef __EMSCRIPTEN__
     bool ok = false;
     const string lib_name = dir + getLibName(libName);
     DEBUG_OUTCON(printf("CmLoader.load('%s'), lib_name: '%s'\n", libName.c_str(), lib_name.c_str()));
@@ -134,6 +150,23 @@ bool CmLoader::load (
 
     DEBUG_OUTCON(printf("CmLoader.load(), ok: %d\n", ok));
     return ok;
+
+#else
+    (void)libName;
+    (void)dir;
+    m_Api.hlib          = (void*)1; //  fake non-null handle, see isLoaded()
+    m_Api.info          = provider_info;
+    m_Api.init          = provider_init;
+    m_Api.deinit        = provider_deinit;
+    m_Api.list_storages = nullptr;
+    m_Api.storage_info  = nullptr;
+    m_Api.open          = (cm_provider_open_f)provider_open;
+    m_Api.close         = provider_close;
+    m_Api.format        = nullptr;
+    m_Api.block_free    = block_free;
+    m_Api.bytearray_free = bytearray_free;
+    return true;
+#endif
 }
 
 void CmLoader::unload (void)
@@ -148,10 +181,10 @@ void CmLoader::unload (void)
 }
 
 int CmLoader::info (
-        CM_JSON_PCHAR* providerInfo
+        CM_JSON_PCHAR* outInfo
 )
 {
-    return (m_Api.info) ? (int)m_Api.info(providerInfo) : RET_UAPKI_PROVIDER_NOT_LOADED;
+    return (m_Api.info) ? (int)m_Api.info(outInfo) : RET_UAPKI_PROVIDER_NOT_LOADED;
 }
 
 int CmLoader::init (
@@ -175,10 +208,10 @@ int CmLoader::listStorages (
 
 int CmLoader::storageInfo (
         const char* uri,
-        CM_JSON_PCHAR* storageInfo
+        CM_JSON_PCHAR* outInfo
 )
 {
-    return (m_Api.storage_info) ? (int)m_Api.storage_info(uri, storageInfo) : (isLoaded() ? RET_UAPKI_UNSUPPORTED_CMAPI : RET_UAPKI_PROVIDER_NOT_LOADED);
+    return (m_Api.storage_info) ? (int)m_Api.storage_info(uri, outInfo) : (isLoaded() ? RET_UAPKI_UNSUPPORTED_CMAPI : RET_UAPKI_PROVIDER_NOT_LOADED);
 }
 
 int CmLoader::open (

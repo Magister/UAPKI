@@ -25,6 +25,9 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include <stdio.h>
 #include <string.h>
 #include "cm-api.h"
@@ -34,6 +37,13 @@
 #include "parson.h"
 #include "uapkic.h"
 #include "cm-pkcs12-debug.h"
+
+#ifdef HAVE_RC_VERSION_H
+#include "rc-version.h"
+#else
+//  See cm-pkcs12\CMakeLists.txt
+#define STR_FILEVERSION "1.0.24"
+#endif
 
 
 #define DEBUG_OUTPUT(msg)
@@ -46,8 +56,8 @@ DEBUG_OUTPUT_FUNC
 static const char* JSON_PROVIDER_INFO = "{"
     "\"id\": \"PKCS12\","                                   //  required
     "\"apiVersion\": \"1.0.0\","                            //  required
-    "\"libVersion\": \"1.0.20\","                           //  required
-    "\"description\": \"PKCS#12 (PFX) file key storage\","  //  required
+    "\"libVersion\": \"" STR_FILEVERSION "\","              //  required
+    "\"description\": \"PKCS#12 CM Provider\","             //  required
     "\"manufacturer\": \"SPECINFOSYSTEMS LLC\","            //  required
     "\"supportListStorages\": false,"                       //  optional
     "\"flags\": 0"                                          //  optional

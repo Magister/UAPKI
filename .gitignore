@@ -44,9 +44,18 @@
 
 # Kernel Module Compile Results
 *.mod*
+# ...but Go module files are not kernel-module artifacts (integration/Go)
+!go.mod
+!go.sum
 *.cmd
 .tmp_versions/
 modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# Native CI build output
+/build-native/
+
+# Per-platform build outputs (library/out/<platform>)
+/library/out/

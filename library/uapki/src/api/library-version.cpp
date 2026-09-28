@@ -32,9 +32,15 @@
 #include "uapkif.h"
 #include <string>
 
+#ifdef HAVE_RC_VERSION_H
+#include "rc-version.h"
+#else
+ //  See uapki\CMakeLists.txt
+#define STR_FILEVERSION "2.0.17"
+#endif
 
-static const char* LIB_NAME     = "UAPKI";
-static const char* LIB_VERSION  = "2.0.16";
+
+static const char* LIB_NAME = "UAPKI";
 
 
 using namespace std;
@@ -50,7 +56,7 @@ int uapki_version (JSON_Object* joParams, JSON_Object* joResult)
     int ret = RET_OK;
 
     DO_JSON(json_object_set_string(joResult, "name", LIB_NAME));
-    DO_JSON(json_object_set_string(joResult, "version", LIB_VERSION));
+    DO_JSON(json_object_set_string(joResult, "version", STR_FILEVERSION));
     DO_JSON(json_object_set_string(joResult, "uapkicVersion", versionToStr(UAPKIC_VERSION).c_str()));
     DO_JSON(json_object_set_string(joResult, "uapkifVersion", versionToStr(UAPKIF_VERSION).c_str()));
 

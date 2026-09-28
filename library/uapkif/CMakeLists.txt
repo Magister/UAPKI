@@ -1,9 +1,14 @@
-cmake_minimum_required(VERSION 3.05)
+cmake_minimum_required(VERSION 3.17)
 
-project(uapkif LANGUAGES C)
-set(UAPKIF_VERSION 2.0.2)
-set(UAPKIF_SOVERSION 2)
-message(STATUS "Project: uapkif, version: " ${UAPKIF_VERSION})
+project(uapkif VERSION 2.0.2 LANGUAGES C)
+
+message(STATUS "Project: ${PROJECT_NAME} (version: ${PROJECT_VERSION})")
+
+configure_file(
+    "${CMAKE_SOURCE_DIR}/rc-version.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/rc-version.h"
+    @ONLY
+)
 
 option(UAPKI_DISABLE_COPY "Disable copying into out dir" OFF)
 
@@ -24,62 +29,83 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_FLAGS_DEBUG_INIT "-Wall")
 set(CMAKE_CXX_FLAGS_RELEASE_INIT "-Wall")
 
-set(CMAKE_SKIP_BUILD_RPATH OFF)
-set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
-set(CMAKE_INSTALL_RPATH "\$ORIGIN")
+if (NOT WIN32)
+    set(CMAKE_SKIP_BUILD_RPATH OFF)
+    set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
+    
+    if(APPLE)
+        set(CMAKE_INSTALL_RPATH "@loader_path")
+    else()
+        set(CMAKE_INSTALL_RPATH "\${ORIGIN}")
+    endif()
+endif ()
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-if (${WIN32})
-    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+if (WIN32)
     set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 endif ()
 
 set(PATH_PRJ ${CMAKE_CURRENT_SOURCE_DIR})
 set(PATH_PRJ_SOURCES ${PATH_PRJ}/src)
-set(PATH_UAPKIC ${PATH_PRJ}/../uapkic)
 
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/../out)
 
 aux_source_directory(${PATH_PRJ_SOURCES}/asn1 UAPKIF_ASN1_SOURCES)
 aux_source_directory(${PATH_PRJ_SOURCES}/struct UAPKIF_STRUCT_SOURCES)
+if(WIN32)
+    set(RESOURCE_RC resource.rc)
+else()
+    set(RESOURCE_RC "")
+endif()
 
-add_library(uapkif ${UAPKI_LIBS_TYPE}
-        ${UAPKIF_ASN1_SOURCES}
-        ${UAPKIF_STRUCT_SOURCES}
+add_library(${PROJECT_NAME} ${UAPKI_LIBS_TYPE}
+    ${UAPKIF_ASN1_SOURCES}
+    ${UAPKIF_STRUCT_SOURCES}
+    ${RESOURCE_RC}
 )
 
-target_include_directories(uapkif PUBLIC
-        ${PATH_PRJ}
-        ${PATH_PRJ}/asn1
-        ${PATH_PRJ}/include
-        ${PATH_PRJ_SOURCES}/asn1
+target_include_directories(${PROJECT_NAME} PUBLIC
+    ${PATH_PRJ}
+    ${PATH_PRJ}/asn1
+    ${PATH_PRJ}/include
+    ${PATH_PRJ_SOURCES}/asn1
+    ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-set_target_properties(uapkif PROPERTIES C_VISIBILITY_PRESET hidden)
-set_target_properties(uapkif PROPERTIES CXX_VISIBILITY_PRESET hidden)
-set_target_properties(uapkif PROPERTIES LINK_FLAGS_RELEASE -s)
-set_target_properties(uapkif PROPERTIES VERSION ${UAPKIF_VERSION} SOVERSION ${UAPKIF_SOVERSION})
+set_target_properties(${PROJECT_NAME} PROPERTIES C_VISIBILITY_PRESET hidden)
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_VISIBILITY_PRESET hidden)
 
-target_compile_definitions(uapkif PRIVATE UAPKIF_LIBRARY)
+if(NOT WIN32)
+    if(APPLE)
+        target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:-Wl,-S>")
+    elseif(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+        set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS_RELEASE -s)
+    endif()
+else()
+    target_compile_definitions(${PROJECT_NAME} PRIVATE NOCRYPT)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 if (UAPKI_LIBS_TYPE STREQUAL STATIC)
-    #  Tell every consumer (and this target) that uapkif is statically linked,
-    #  so uapkif-export.h drops the dllimport/dllexport decoration.
-    target_compile_definitions(uapkif PUBLIC UAPKIF_STATIC)
-endif ()
-if (${WIN32})
-    target_compile_definitions(uapkif PRIVATE NOCRYPT)
-    target_compile_definitions(uapkif PRIVATE _CRT_SECURE_NO_WARNINGS)
-endif ()
+    #  Statically linked into a single binary (1C AddIn): drop dllimport/dllexport.
+    target_compile_definitions(${PROJECT_NAME} PUBLIC UAPKIF_STATIC)
+endif()
 
-target_link_libraries(uapkif PUBLIC uapkic)
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    VERSION   "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}"
+    SOVERSION "${PROJECT_VERSION_MAJOR}"
+)
 
+target_compile_definitions(${PROJECT_NAME} PRIVATE UAPKIF_LIBRARY)
 
-if (NOT UAPKI_DISABLE_COPY)
-    add_custom_command(TARGET uapkif POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:uapkif> ../out/
-            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:uapkif> ../../${OUT_DIR}/
+target_link_libraries(${PROJECT_NAME} PUBLIC uapkic)
+
+if(NOT UAPKI_DISABLE_COPY)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:uapkif> ../out/
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:uapkif> ${CMAKE_SOURCE_DIR}/${OUT_DIR}/
     )
-endif ()
+endif()

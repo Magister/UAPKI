@@ -1,15 +1,20 @@
-cmake_minimum_required(VERSION 3.05)
+cmake_minimum_required(VERSION 3.17)
 
-project(cm-pkcs12 LANGUAGES C CXX)
-set(CM_PKCS12_VERSION 1.0.20)
-set(CM_PKCS12_SOVERSION 1)
-message(STATUS "Project: cm-pkcs12, version: " ${CM_PKCS12_VERSION})
+project(cm-pkcs12 VERSION 1.0.24 LANGUAGES C CXX)
+
+message(STATUS "Project: ${PROJECT_NAME} (version: ${PROJECT_VERSION})")
+
+configure_file(
+    "${CMAKE_SOURCE_DIR}/rc-version.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/rc-version.h"
+    @ONLY
+)
 
 option(UAPKI_DISABLE_COPY "Disable copying into out dir" OFF)
 
 if (DEFINED UAPKI_CM_PKCS12_LIB_TYPE)
     if (NOT UAPKI_CM_PKCS12_LIB_TYPE STREQUAL SHARED AND NOT UAPKI_CM_PKCS12_LIB_TYPE STREQUAL STATIC)
-        message(FATAL_ERROR "Bad UAPKI_CM_PKCS12_LIB_TYPE")
+    message(FATAL_ERROR "Bad UAPKI_CM_PKCS12_LIB_TYPE")
     endif ()
 else ()
     set(UAPKI_CM_PKCS12_LIB_TYPE SHARED)
@@ -26,18 +31,24 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS_DEBUG_INIT "-Wall")
 set(CMAKE_CXX_FLAGS_RELEASE_INIT "-Wall")
 
-set(CMAKE_SKIP_BUILD_RPATH OFF)
-set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
-set(CMAKE_INSTALL_RPATH "\$ORIGIN")
+if (NOT WIN32)
+    set(CMAKE_SKIP_BUILD_RPATH OFF)
+    set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
+    
+    if(APPLE)
+        set(CMAKE_INSTALL_RPATH "@loader_path")
+    else()
+        set(CMAKE_INSTALL_RPATH "\${ORIGIN}")
+    endif()
+endif ()
 
 #set(CMAKE_SHARED_LINKER_FLAGS "-static-libgcc -static-libstdc++")
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-if (${WIN32})
-    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+if (WIN32)
     set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 endif ()
 
@@ -56,62 +67,78 @@ aux_source_directory(${PATH_PRJ}/src/crypto CMP12_CRYPTO_SOURCES)
 aux_source_directory(${PATH_PRJ}/src/storage CMP12_STORAGE_SOURCES)
 aux_source_directory(${PATH_COMMON_JSON} JSON_SOURCES)
 set(COMMON_SOURCES
-        ${PATH_COMMON_PKIX}/aid.c
-        ${PATH_COMMON_PKIX}/ba-utils.c
-        ${PATH_COMMON_PKIX}/dstu4145-params.c
-        ${PATH_COMMON_PKIX}/ecdsa-params.c
-        ${PATH_COMMON_PKIX}/iconv-utils.c
-        ${PATH_COMMON_PKIX}/iso15946.c
-        ${PATH_COMMON_PKIX}/key-wrap.c
-        ${PATH_COMMON_PKIX}/oids.c
-        ${PATH_COMMON_PKIX}/oid-utils.c
-        ${PATH_COMMON_PKIX}/private-key.c
-        ${PATH_COMMON_PKIX}/uapki-ns-util.cpp
+    ${PATH_COMMON_PKIX}/aid.c
+    ${PATH_COMMON_PKIX}/ba-utils.c
+    ${PATH_COMMON_PKIX}/dstu4145-params.c
+    ${PATH_COMMON_PKIX}/ecdsa-params.c
+    ${PATH_COMMON_PKIX}/iconv-utils.c
+    ${PATH_COMMON_PKIX}/iso15946.c
+    ${PATH_COMMON_PKIX}/key-wrap.c
+    ${PATH_COMMON_PKIX}/oids.c
+    ${PATH_COMMON_PKIX}/oid-utils.c
+    ${PATH_COMMON_PKIX}/private-key.c
+    ${PATH_COMMON_PKIX}/uapki-ns-util.cpp
+)
+if(WIN32)
+    set(RESOURCE_RC resource.rc)
+else()
+    set(RESOURCE_RC "")
+endif()
+
+add_library(${PROJECT_NAME} ${UAPKI_CM_PKCS12_LIB_TYPE}
+    ${CMP12_CRYPTO_SOURCES}
+    ${CMP12_SRC_SOURCES}
+    ${CMP12_STORAGE_SOURCES}
+    ${COMMON_SOURCES}
+    ${JSON_SOURCES}
+    ${RESOURCE_RC}
 )
 
-add_library(cm-pkcs12 ${UAPKI_CM_PKCS12_LIB_TYPE}
-        ${CMP12_CRYPTO_SOURCES}
-        ${CMP12_SRC_SOURCES}
-        ${CMP12_STORAGE_SOURCES}
-        ${COMMON_SOURCES}
-        ${JSON_SOURCES}
+target_include_directories(${PROJECT_NAME} PUBLIC
+    ${PATH_COMMON_CMAPI}
+    ${PATH_COMMON_JSON}
+    ${PATH_COMMON_MACROS}
+    ${PATH_COMMON_PKIX}
+    ${PATH_PRJ}/src
+    ${PATH_PRJ}/src/crypto
+    ${PATH_PRJ}/src/storage
+    ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_include_directories(cm-pkcs12 PUBLIC
-        ${PATH_COMMON_CMAPI}
-        ${PATH_COMMON_JSON}
-        ${PATH_COMMON_MACROS}
-        ${PATH_COMMON_PKIX}
-        ${PATH_PRJ}/src
-        ${PATH_PRJ}/src/crypto
-        ${PATH_PRJ}/src/storage
+set_target_properties(${PROJECT_NAME} PROPERTIES C_VISIBILITY_PRESET hidden)
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_VISIBILITY_PRESET hidden)
+
+if(NOT WIN32)
+    if(APPLE)
+        target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:-Wl,-S>")
+    elseif(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+        set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS_RELEASE -s)
+    endif()
+else()
+    target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_RC_VERSION_H)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE NOCRYPT)
+endif()
+
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    VERSION   "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}"
+    SOVERSION "${PROJECT_VERSION_MAJOR}"
 )
 
-set_target_properties(cm-pkcs12 PROPERTIES C_VISIBILITY_PRESET hidden)
-set_target_properties(cm-pkcs12 PROPERTIES CXX_VISIBILITY_PRESET hidden)
-set_target_properties(cm-pkcs12 PROPERTIES LINK_FLAGS_RELEASE -s)
-set_target_properties(cm-pkcs12 PROPERTIES VERSION ${CM_PKCS12_VERSION} SOVERSION ${CM_PKCS12_SOVERSION})
+target_compile_definitions(${PROJECT_NAME} PRIVATE CM_LIBRARY)
 
-target_compile_definitions(cm-pkcs12 PRIVATE CM_LIBRARY)
+target_link_libraries(${PROJECT_NAME} PUBLIC uapkic uapkif)
 if (UAPKI_CM_PKCS12_LIB_TYPE STREQUAL STATIC)
     #  Statically linked into a single binary: drop the dllimport/dllexport
     #  decoration on the provider entry points (cm-export.h).
-    target_compile_definitions(cm-pkcs12 PUBLIC CM_STATIC)
-endif ()
-if (${WIN32})
-    target_compile_definitions(cm-pkcs12 PRIVATE NOCRYPT)
-    target_compile_definitions(cm-pkcs12 PRIVATE _CRT_SECURE_NO_WARNINGS)
-endif ()
+    target_compile_definitions(${PROJECT_NAME} PUBLIC CM_STATIC)
+endif()
+if(WIN32)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
 
-target_link_libraries(cm-pkcs12 PUBLIC uapkic uapkif)
-if (${APPLE})
-    target_link_libraries(cm-pkcs12 PRIVATE iconv)
-endif ()
-
-
-if (NOT UAPKI_DISABLE_COPY)
-    add_custom_command(TARGET cm-pkcs12 POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:cm-pkcs12> ../out/
-            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:cm-pkcs12> ../../${OUT_DIR}/
+if(NOT UAPKI_DISABLE_COPY)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:cm-pkcs12> ../out/
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:cm-pkcs12> ${CMAKE_SOURCE_DIR}/${OUT_DIR}/
     )
-endif ()
+endif()

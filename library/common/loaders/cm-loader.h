@@ -76,7 +76,7 @@ public:
         return &m_Api;
     }
     int info (
-        CM_JSON_PCHAR* providerInfo
+        CM_JSON_PCHAR* outInfo
     );
     int init (
         const CM_JSON_PCHAR providerParams
@@ -87,7 +87,7 @@ public:
     );
     int storageInfo (
         const char* uri,
-        CM_JSON_PCHAR* storageInfo
+        CM_JSON_PCHAR* outInfo
     );
     int open (
         const char* uri,
