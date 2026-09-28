@@ -38,9 +38,15 @@ static std::u16string  s_classNames(g_classNames);
 
 
 //  These five C functions are the platform's entry points into a native AddIn.
-//  On Windows they are exported via uapki-1c.def; on Unix via default visibility.
+//  On Windows they are exported via uapki-1c.def; on Unix the platform dlsym()s
+//  them by their plain C names, so they need C linkage and default visibility.
+#if defined(_WIN32)
+    #define ADDIN_EXPORT
+#else
+    #define ADDIN_EXPORT extern "C" __attribute__((visibility("default")))
+#endif
 
-long GetClassObject (const WCHAR_T* /*wsName*/, IComponentBase** pInterface)
+ADDIN_EXPORT long GetClassObject (const WCHAR_T* /*wsName*/, IComponentBase** pInterface)
 {
     if (!pInterface) return 0;
     if (!*pInterface) {
@@ -53,7 +59,7 @@ long GetClassObject (const WCHAR_T* /*wsName*/, IComponentBase** pInterface)
     return 0;
 }
 
-long DestroyObject (IComponentBase** pIntf)
+ADDIN_EXPORT long DestroyObject (IComponentBase** pIntf)
 {
     if (!pIntf || !*pIntf) return -1;
 
@@ -62,18 +68,18 @@ long DestroyObject (IComponentBase** pIntf)
     return 0;
 }
 
-const WCHAR_T* GetClassNames (void)
+ADDIN_EXPORT const WCHAR_T* GetClassNames (void)
 {
     return s_classNames.c_str();
 }
 
-AppCapabilities SetPlatformCapabilities (const AppCapabilities /*capabilities*/)
+ADDIN_EXPORT AppCapabilities SetPlatformCapabilities (const AppCapabilities /*capabilities*/)
 {
     //  Report the highest capability level we understand.
     return eAppCapabilitiesLast;
 }
 
-AttachType GetAttachType (void)
+ADDIN_EXPORT AttachType GetAttachType (void)
 {
     //  File-key crypto works in or out of process; let 1C choose (default since 8.3.21).
     return eCanAttachAny;

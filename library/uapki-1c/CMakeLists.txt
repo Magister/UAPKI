@@ -135,4 +135,12 @@ if (UAPKI_BUILD_1C_SELFTEST)
     if (${APPLE})
         target_link_libraries(uapki-1c-selftest PRIVATE iconv)
     endif ()
+
+    #  Unix: load the built AddIn via dlopen() like the 1C platform and call it.
+    if (${UNIX})
+        add_executable(uapki-1c-loadtest selftest/loadtest.cpp)
+        target_include_directories(uapki-1c-loadtest PRIVATE ${PATH_PRJ}/include-1c)
+        target_link_libraries(uapki-1c-loadtest PRIVATE dl)
+        add_dependencies(uapki-1c-loadtest uapki-1c)
+    endif ()
 endif ()

@@ -189,6 +189,10 @@ message(STATUS "OUT_DIR:" ${OUT_DIR})
 file(MAKE_DIRECTORY ${OUT_DIR})
 
 option(UAPKI_BUILD_1C_ADDIN "Build the 1C:Enterprise native AddIn (library/uapki-1c)" OFF)
+if(UAPKI_BUILD_1C_ADDIN)
+  #  The AddIn is a shared object that embeds the STATIC libs: they must be PIC.
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   add_subdirectory (uapkic)

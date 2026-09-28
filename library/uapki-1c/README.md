@@ -140,6 +140,17 @@ no external provider on disk. Run it from the data dir:
 ./uapki-1c-selftest library/test/data
 ```
 
+On Linux the same option also builds `uapki-1c-loadtest`, which loads the built
+AddIn the way the 1C platform does (`dlopen` + `dlsym` of the five C entry
+points) and calls `Process` through `IComponentBase`:
+
+```bash
+./uapki-1c-loadtest uapki-1c/libuapki-1cLin64.so
+```
+
+The Linux AddIn embeds the UAPKI stack statically but uses the system
+`libcurl.so.4` for OCSP/TSP/CMP.
+
 ## How the single binary works
 
 UAPKI normally `dlopen()`s a `cm-pkcs12` shared object. Here, `cm-pkcs12` is
