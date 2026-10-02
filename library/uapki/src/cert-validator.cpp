@@ -28,6 +28,7 @@
 #define FILE_MARKER "uapki/cert-validator.cpp"
 
 #include "cert-validator.h"
+#include <string.h>
 #include "ba-utils.h"
 #include "macros-internal.h"
 #include "oid-utils.h"
@@ -415,7 +416,8 @@ int CertValidator::getStatus (
         for (auto it_obtcert : obtained_certs) {
             if (
                 !findItemByKeyId(m_CertChain, it_obtcert->getAuthorityKeyId()) &&
-                !findItemByKeyId(m_CertChain, it_obtcert->getKeyId())
+                !findItemByKeyId(m_CertChain, it_obtcert->getKeyId()) &&
+                !acceptResponderOfSameProvider(it_obtcert, idx_root, validateTime)
             ) {
                 (void)addExpectedCert(CertEntity::OCSP, it_obtcert);
                 SET_ERROR(RET_UAPKI_CERT_CHAIN_NOT_FOUND);
@@ -1184,6 +1186,118 @@ int CertValidator::verifySignatureSignerInfo (
     }
 
     return ret;
+}
+
+
+//  UAPKI-1C PATCH ocsp-responder-same-provider (see PATCHES.md)
+namespace {
+
+//  Identity of the provider (КНЕДП) that owns a CA certificate: the EDRPOU code taken from
+//  organizationIdentifier ("NTRUA-<EDRPOU>") or, for certificates without it, from serialNumber ("UA-<EDRPOU>-<N>").
+static string provider_edrpou_from (
+        const string& value,
+        const char* prefix
+)
+{
+    const size_t len_prefix = strlen(prefix);
+    if ((value.size() < len_prefix + 8) || (value.compare(0, len_prefix, prefix) != 0)) return string();
+
+    const string s_edrpou = value.substr(len_prefix, 8);
+    for (const char c : s_edrpou) {
+        if ((c < '0') || (c > '9')) return string();
+    }
+    if (value.size() > len_prefix + 8) {
+        //  serialNumber: "UA-<EDRPOU>-<N>"
+        if (value[len_prefix + 8] != '-') return string();
+    }
+    return s_edrpou;
+}
+
+struct ProviderId {
+    string  orgId;
+    string  edrpou;
+    string  organization;
+
+    bool init (const Cert::CerItem* cerItem) {
+        const Name_t& name = cerItem->getCert()->tbsCertificate.subject;
+        string s_sn;
+        if (
+            (rdnameFromName(name, OID_X520_OrganizationIdentifier, orgId) != RET_OK) ||
+            (rdnameFromName(name, OID_X520_SerialNumber, s_sn) != RET_OK) ||
+            (rdnameFromName(name, OID_X520_Organization, organization) != RET_OK)
+        ) return false;
+        edrpou = orgId.empty() ? provider_edrpou_from(s_sn, "UA-") : provider_edrpou_from(orgId, "NTRUA-");
+        return !edrpou.empty();
+    }
+    bool isSame (const ProviderId& other) const {
+        if (!orgId.empty() && !other.orgId.empty()) {
+            return (orgId == other.orgId);
+        }
+        //  At least one of them has no organizationIdentifier (АЦСК-era certificates)
+        return (edrpou == other.edrpou) && !organization.empty() && (organization == other.organization);
+    }
+};  //  end struct ProviderId
+
+}   //  end namespace
+
+//  Accept an OCSP-responder that is not issued by any CA of the subject's chain when
+//  it belongs to the same provider (КНЕДП), e.g. a re-keyed CA answers for certs of its previous CA key:
+//  - EKU id-kp-OCSPSigning;
+//  - its own chain is built from the store, signatures verify, all certs are valid at validateTime;
+//  - the root of its chain is trusted (INIT certCache.trustedCerts) or is the root of the subject's chain;
+//  - its issuer and the issuer of every subject it answered for are the same provider (see ProviderId).
+//  Certs of the responder's chain are added to obtained certs (they go to certificate-values of CAdES-XL).
+bool CertValidator::acceptResponderOfSameProvider (
+        Cert::CerItem* cerResponder,
+        const size_t idxRoot,
+        const uint64_t validateTime
+)
+{
+    if (!checkCertUsage(CertEntity::OCSP, cerResponder)) return false;
+
+    vector<Cert::CerItem*> chain_certs;
+    if ((m_CerStore->getChainCerts(cerResponder, chain_certs) != RET_OK) || chain_certs.empty()) return false;
+
+    Cert::CerItem* cer_root = chain_certs.back();
+    if (!cer_root->isSelfSigned() || !cer_root->getCertExtKeyUsage().isCa()) return false;
+    if (!cer_root->isTrusted() && !cer_root->equalCertId(m_CertChain[idxRoot]->getSubjectCertId())) return false;
+
+    Cert::CerItem* cer_subject = cerResponder;
+    for (const auto it : chain_certs) {
+        if (
+            (cer_subject->verify(it, true) != RET_OK) ||
+            (cer_subject->getVerifyStatus() != Cert::VerifyStatus::VALID) ||
+            (cer_subject->checkValidity(validateTime) != RET_OK) ||
+            !it->getCertExtKeyUsage().isCa()
+        ) return false;
+        cer_subject = it;
+    }
+    if (
+        (cer_root->verify(cer_root, true) != RET_OK) ||
+        (cer_root->checkValidity(validateTime) != RET_OK)
+    ) return false;
+
+    ProviderId provider_responder;
+    if (!provider_responder.init(chain_certs[0])) return false;
+    size_t cnt_answered = 0;
+    for (size_t i = 0; i < idxRoot; i++) {
+        const CertChainItem* entity = m_CertChain[i];
+        if (entity->getResultValidationByOcsp().cerResponder != cerResponder) continue;
+
+        ProviderId provider_subject;
+        if (!entity->getIssuer() || !provider_subject.init(entity->getIssuer())) return false;
+        if (!provider_responder.isSame(provider_subject)) return false;
+        cnt_answered++;
+    }
+    if (cnt_answered == 0) return false;
+
+    for (size_t i = 0; i < chain_certs.size(); i++) {
+        const CertEntity cert_entity = (i == chain_certs.size() - 1) ? CertEntity::ROOT : CertEntity::CA;
+        if (addUniqueItem(m_ObtainedCerts, cert_entity, chain_certs[i]) != RET_OK) return false;
+    }
+
+    DEBUG_OUTCON(printf("CertValidator::acceptResponderOfSameProvider(), accepted, provider: '%s'\n", provider_responder.edrpou.c_str()));
+    return true;
 }
 
 

@@ -473,6 +473,14 @@ public:
         Cert::CerItem** cerSigner
     );
 
+private:
+    //  UAPKI-1C PATCH ocsp-responder-same-provider (see PATCHES.md)
+    bool acceptResponderOfSameProvider (
+        Cert::CerItem* cerResponder,
+        const size_t idxRoot,
+        const uint64_t validateTime
+    );
+
 };  //  end class CertValidator
 
 
